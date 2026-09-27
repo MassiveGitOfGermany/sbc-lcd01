@@ -1,0 +1,1 @@
+{"name":"sbc-lcd01","version":"0.0.1","description":"MakeCode driver for Joy-IT SBC-LCD01 ST7789VW display","license":"MIT","dependencies":{"core":"*"},"files":["main.ts"],"preferredEditor":"tsprj"}

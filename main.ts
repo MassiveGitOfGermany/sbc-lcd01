@@ -1,0 +1,52 @@
+//% color="#0078D7" icon="\uf26c" block="SBC-LCD01"
+namespace SBC_LCD01 {
+    const DC = DigitalPin.P8
+    const RES = DigitalPin.P16
+    const BLK = DigitalPin.P12
+    const WIDTH = 240
+    const HEIGHT = 240
+    function command(c: number) { pins.digitalWritePin(DC, 0); pins.spiWrite(c) }
+    function dataByte(d: number) { pins.digitalWritePin(DC, 1); pins.spiWrite(d) }
+    function data2(a: number, b: number) { dataByte(a); dataByte(b) }
+    function setWindow(x0: number, y0: number, x1: number, y1: number) {
+        command(0x2A); data2(x0 >> 8, x0 & 0xff); data2(x1 >> 8, x1 & 0xff)
+        command(0x2B); data2(y0 >> 8, y0 & 0xff); data2(y1 >> 8, y1 & 0xff)
+        command(0x2C)
+    }
+    //% block="initialize LCD"
+    export function init() {
+        pins.spiPins(DigitalPin.P15, DigitalPin.P14, DigitalPin.P13)
+        pins.spiFormat(8, 3); pins.spiFrequency(8000000)
+        pins.digitalWritePin(BLK, 1); pins.digitalWritePin(RES, 1)
+        pins.digitalWritePin(RES, 0); basic.pause(50); pins.digitalWritePin(RES, 1); basic.pause(120)
+        command(0x01); basic.pause(120); command(0x11); basic.pause(120)
+        command(0x3A); dataByte(0x55); command(0x36); dataByte(0x00); command(0x21); command(0x29); basic.pause(20)
+        clearScreen()
+    }
+    //% block="clear LCD"
+    export function clearScreen() {
+        setWindow(0, 0, WIDTH - 1, HEIGHT - 1)
+        for (let i = 0; i < WIDTH * HEIGHT; i++) { dataByte(0); dataByte(0) }
+    }
+    //% block="draw pixel x $x y $y color $color"
+    export function drawPixel(x: number, y: number, color: number) {
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return
+        setWindow(x, y, x, y); dataByte(color >> 8); dataByte(color & 0xff)
+    }
+    //% block="show HELLO"
+    export function hello() { clearScreen(); showString("HELLO", 40, 100, 3, 0xFFFF, 0x0000) }
+    //% block="show text $text x $x y $y size $size color $color background $background"
+    export function showString(text: string, x: number, y: number, size: number, color: number, background: number) {
+        let xx = x
+        for (let n = 0; n < text.length; n++) {
+            let c = text.charCodeAt(n); if (c >= 97 && c <= 122) c -= 32
+            if (c == 32) xx += 6 * size; else { drawChar(c, xx, y, size, color, background); xx += 6 * size }
+        }
+    }
+    function drawChar(c: number, x: number, y: number, size: number, color: number, background: number) {
+        let font = [0x7E,0x09,0x09,0x09,0x7E,0x7F,0x49,0x49,0x49,0x36,0x3E,0x41,0x41,0x41,0x22,0x7F,0x41,0x41,0x22,0x1C,0x7F,0x49,0x49,0x49,0x41,0x7F,0x09,0x09,0x09,0x01,0x3E,0x41,0x49,0x49,0x7A,0x7F,0x08,0x08,0x08,0x7F,0x00,0x41,0x7F,0x41,0x00,0x20,0x40,0x41,0x3F,0x01,0x7F,0x08,0x14,0x22,0x41,0x7F,0x40,0x40,0x40,0x40,0x7F,0x02,0x0C,0x02,0x7F,0x7F,0x04,0x08,0x10,0x7F,0x3E,0x41,0x41,0x41,0x3E,0x7F,0x09,0x09,0x09,0x06,0x3E,0x41,0x51,0x21,0x5E,0x7F,0x09,0x19,0x29,0x46,0x46,0x49,0x49,0x49,0x31,0x01,0x01,0x7F,0x01,0x01,0x3F,0x40,0x40,0x40,0x3F,0x1F,0x20,0x40,0x20,0x1F,0x7F,0x20,0x18,0x20,0x7F,0x63,0x14,0x08,0x14,0x63,0x07,0x08,0x70,0x08,0x07,0x61,0x51,0x49,0x45,0x43]
+        if (c < 65 || c > 90) return
+        let index = (c - 65) * 5
+        for (let col = 0; col < 5; col++) { let bits = font[index + col]; for (let row = 0; row < 7; row++) { let pc = ((bits >> row) & 1) ? color : background; for (let sx = 0; sx < size; sx++) for (let sy = 0; sy < size; sy++) drawPixel(x + col * size + sx, y + row * size + sy, pc) } }
+    }
+}
