@@ -95,6 +95,13 @@ let lives=3
 let checkpointX=0, checkpointY=0
 let checkpointSet=false
 let shake=0
+let lastRenderCameraX=0
+let lastRenderCameraY=0
+let firstRender=true
+let oldSpriteX:number[]=[]
+let oldSpriteY:number[]=[]
+let oldSpriteW:number[]=[]
+let oldSpriteH:number[]=[]
 
 function cmd(c:number){pins.digitalWritePin(DC,0);pins.spiWrite(c)}
 function dat(d:number){pins.digitalWritePin(DC,1);pins.spiWrite(d)}
@@ -120,7 +127,8 @@ export function setBackground(color:Color){backgroundColor=color}
 //% block="clear LCD with color $color"
 export function clearScreen(color:Color=Color.Black){
     if(!lcdReady)return
-    win(0,0,239,239);let hi=color>>8,lo=color&255
+    win(0,0,239,239)
+    let hi=color>>8,lo=color&255
     for(let i=0;i<57600;i++){dat(hi);dat(lo)}
 }
 
@@ -445,6 +453,19 @@ export function onButtonBPressed(handler:()=>void){input.onButtonPressed(Button.
 //% block="when buttons A+B pressed"
 export function onButtonABPressed(handler:()=>void){input.onButtonPressed(Button.AB,handler)}
 
+/**
+ * Returns true while a button is physically held.
+ */
+//% block="button A is pressed"
+export function buttonAPressed():boolean{return input.buttonIsPressed(Button.A)}
+
+//% block="button B is pressed"
+export function buttonBPressed():boolean{return input.buttonIsPressed(Button.B)}
+
+//% block="buttons A+B are pressed"
+export function buttonsABPressed():boolean{return input.buttonIsPressed(Button.AB)}
+
+
 //% block="when button A pressed while player is on block $type"
 export function onAOnBlock(type:BlockType,handler:()=>void){
     input.onButtonPressed(Button.A,function(){if(player&&currentBlock()==type)handler()})
@@ -507,8 +528,9 @@ export function resetGameTime(){gameTime=0}
 //% block="start game engine"
 export function startGame(){
     if(running)return
+    firstRender=true
     running=true
-    control.inBackground(function(){while(running){if(!gamePaused){updateGame();gameTime++}basic.pause(40)}})
+    control.inBackground(function(){while(running){if(!gamePaused){updateGame();gameTime++}basic.pause(30)}})
 }
 
 //% block="stop game engine"
@@ -542,8 +564,68 @@ function updateAI(s:Sprite){
     }
 }
 
+function drawWorld(){
+    for(let b of blocks)if(b.enabled){
+        let sx=b.x-cameraX+(shake>0?(Math.randomRange(-shake,shake)):0)
+        let sy=b.y-cameraY+(shake>0?(Math.randomRange(-shake,shake)):0)
+        drawRect(sx,sy,b.w,b.h,b.color)
+    }
+    for(let d of doors)if(!d.open)drawRect(d.x-cameraX,d.y-cameraY,d.w,d.h,Color.Red)
+    for(let c of collectibles)if(!c.taken)drawRect(c.x-cameraX,c.y-cameraY,7,7,c.color)
+    for(let t of teleports)drawRect(t.x-cameraX,t.y-cameraY,t.w,t.h,Color.Magenta)
+    for(let p of particles)drawRect(p.x-cameraX,p.y-cameraY,2,2,p.color)
+}
+
+function redrawArea(x:number,y:number,w:number,h:number){
+    let x0=Math.max(0,Math.floor(x))
+    let y0=Math.max(0,Math.floor(y))
+    let x1=Math.min(239,Math.ceil(x+w)-1)
+    let y1=Math.min(239,Math.ceil(y+h)-1)
+    if(x1<x0||y1<y0)return
+    drawRect(x0,y0,x1-x0+1,y1-y0+1,backgroundColor)
+    for(let b of blocks)if(b.enabled){
+        let bx=b.x-cameraX,by=b.y-cameraY
+        let ix=Math.max(x0,bx),iy=Math.max(y0,by)
+        let ax=Math.min(x1,bx+b.w-1),ay=Math.min(y1,by+b.h-1)
+        if(ax>=ix&&ay>=iy)drawRect(ix,iy,ax-ix+1,ay-iy+1,b.color)
+    }
+    for(let d of doors)if(!d.open){
+        let bx=d.x-cameraX,by=d.y-cameraY
+        let ix=Math.max(x0,bx),iy=Math.max(y0,by)
+        let ax=Math.min(x1,bx+d.w-1),ay=Math.min(y1,by+d.h-1)
+        if(ax>=ix&&ay>=iy)drawRect(ix,iy,ax-ix+1,ay-iy+1,Color.Red)
+    }
+    for(let c of collectibles)if(!c.taken){
+        let bx=c.x-cameraX,by=c.y-cameraY
+        if(bx+7>x0&&bx<x1+1&&by+7>y0&&by<y1+1)drawRect(bx,by,7,7,c.color)
+    }
+    for(let t of teleports){
+        let bx=t.x-cameraX,by=t.y-cameraY
+        if(bx+t.w>x0&&bx<x1+1&&by+t.h>y0&&by<y1+1)drawRect(bx,by,t.w,t.h,Color.Magenta)
+    }
+}
+
+function drawAllSprites(){
+    for(let layer=0;layer<=3;layer++)
+        for(let s of sprites)if(s.layer==layer)s.draw()
+}
+
 function updateGame(){
     if(!lcdReady)return
+
+    // Continuous movement while the physical button is held.
+    // B = right, A+B = left. A alone remains available for jump.
+    if(player){
+        if(input.buttonIsPressed(Button.AB)){
+            player.direction=Direction.Left
+            player.vx=-player.speed
+        }else if(input.buttonIsPressed(Button.B)){
+            player.direction=Direction.Right
+            player.vx=player.speed
+        }else{
+            player.vx=0
+        }
+    }
 
     for(let m of moving){
         m.t+=m.s
@@ -608,21 +690,36 @@ function updateGame(){
     }
     if(shake>0)shake--
 
-    clearScreen(backgroundColor)
-
-    // world blocks
-    for(let b of blocks)if(b.enabled){
-        let sx=b.x-cameraX+(shake>0?(Math.randomRange(-shake,shake)):0)
-        let sy=b.y-cameraY+(shake>0?(Math.randomRange(-shake,shake)):0)
-        drawRect(sx,sy,b.w,b.h,b.color)
+    // Fast dirty-rectangle renderer.
+    // The old engine erased all 57,600 pixels every 40 ms.
+    // Now static scenes are drawn once and only changed areas are refreshed.
+    let cameraMoved = firstRender || cameraX!=lastRenderCameraX || cameraY!=lastRenderCameraY || shake>0
+    let movingWorld = moving.length>0
+    if(cameraMoved || movingWorld){
+        clearScreen(backgroundColor)
+        drawWorld()
+        drawAllSprites()
+        firstRender=false
+    }else{
+        // Restore the old sprite positions, then draw the new sprites.
+        for(let i=0;i<sprites.length;i++){
+            let s=sprites[i]
+            if(i<oldSpriteX.length){
+                redrawArea(oldSpriteX[i],oldSpriteY[i],oldSpriteW[i],oldSpriteH[i])
+            }
+        }
+        for(let s of sprites)if(s.visible){
+            redrawArea(s.x-cameraX,s.y-cameraY,s.width,s.height)
+        }
+        drawAllSprites()
     }
-    for(let d of doors)if(!d.open)drawRect(d.x-cameraX,d.y-cameraY,d.w,d.h,Color.Red)
-    for(let c of collectibles)if(!c.taken)drawRect(c.x-cameraX,c.y-cameraY,7,7,c.color)
-    for(let t of teleports)drawRect(t.x-cameraX,t.y-cameraY,t.w,t.h,Color.Magenta)
-    for(let p of particles)drawRect(p.x-cameraX,p.y-cameraY,2,2,p.color)
 
-    for(let layer=0;layer<=3;layer++)
-        for(let s of sprites)if(s.layer==layer)s.draw()
+    oldSpriteX=[];oldSpriteY=[];oldSpriteW=[];oldSpriteH=[]
+    for(let s of sprites){
+        oldSpriteX.push(s.x-cameraX);oldSpriteY.push(s.y-cameraY)
+        oldSpriteW.push(s.width);oldSpriteH.push(s.height)
+    }
+    lastRenderCameraX=cameraX;lastRenderCameraY=cameraY
 
     for(let h of onTouchHandlers)if(h.a&&h.b&&h.a.visible&&h.b.visible&&overlap(h.a,h.b))h.f()
 }
