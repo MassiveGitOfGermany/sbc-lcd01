@@ -1,7 +1,7 @@
 {
     "name": "sbc-lcd01",
-    "version": "0.0.3",
-    "description": "SBC-LCD01 ST7789VW LCD game engine",
+    "version": "0.0.4",
+    "description": "SBC-LCD01 ST7789VW LCD full game engine",
     "license": "MIT",
     "dependencies": {
         "core": "*"
