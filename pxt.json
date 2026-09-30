@@ -1,7 +1,7 @@
 {
     "name": "sbc-lcd01",
-    "version": "0.0.2",
-    "description": "SBC-LCD01 ST7789VW MakeCode extension",
+    "version": "0.0.3",
+    "description": "SBC-LCD01 ST7789VW LCD game engine",
     "license": "MIT",
     "dependencies": {
         "core": "*"
